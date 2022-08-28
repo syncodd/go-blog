@@ -19,30 +19,7 @@ type Blog struct {
 	Content string
 }
 
-func getBlogs() ([]Blog, error) {
-	// An albums slice to hold data from returned rows.
-	var blogs []Blog
-
-	rows, err := db.Query("SELECT * FROM blog")
-	if err != nil {
-		return nil, fmt.Errorf("Blog: %v", err)
-	}
-	defer rows.Close()
-	// Loop through rows, using Scan to assign column data to struct fields.
-	for rows.Next() {
-		var blg Blog
-		if err := rows.Scan(&blg.ID, &blg.Title, &blg.Content); err != nil {
-			return nil, fmt.Errorf("Blog: %v", err)
-		}
-		blogs = append(blogs, blg)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("Blog: %v", err)
-	}
-	return blogs, nil
-}
-
-func main() {
+func connectMySQL() {
 
 	cfg := mysql.Config{
 		User:                 "root",     //os.Getenv("DBUSER"),
@@ -65,6 +42,61 @@ func main() {
 	}
 	fmt.Println("Connected!")
 
+}
+
+func getBlogs() ([]Blog, error) {
+	// An albums slice to hold data from returned rows.
+	var blogs []Blog
+
+	rows, err := db.Query("SELECT * FROM blog ORDER BY id DESC")
+	if err != nil {
+		return nil, fmt.Errorf("Blog: %v", err)
+	}
+	defer rows.Close()
+	// Loop through rows, using Scan to assign column data to struct fields.
+	for rows.Next() {
+		var blg Blog
+		if err := rows.Scan(&blg.ID, &blg.Title, &blg.Content); err != nil {
+			return nil, fmt.Errorf("Blog: %v", err)
+		}
+		blogs = append(blogs, blg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("Blog: %v", err)
+	}
+	return blogs, nil
+}
+
+func sendBlog(paylaod struct {
+	Title   string `form:"title_text"`
+	Content string `form:"content_text"`
+}) (int64, error) {
+
+	result, err := db.Exec("INSERT INTO blog (title, content) VALUES (?, ?)", paylaod.Title, paylaod.Content)
+	if err != nil {
+		return 0, fmt.Errorf("addBlog: %v", err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("addBlog: %v", err)
+	}
+	return id, nil
+}
+
+func delBlog(id string) error {
+
+	_, err := db.Exec("DELETE FROM blog WHERE id = (?)", id)
+	if err != nil {
+		return fmt.Errorf("addBlog: %v", err)
+	}
+
+	return nil
+}
+
+func main() {
+
+	connectMySQL()
+
 	// Initialize standard Go html template engine
 	engine := html.New("./views", ".html")
 
@@ -81,6 +113,66 @@ func main() {
 
 		// Render index template
 		return c.Render("index", fiber.Map{
+			"Title": "Title",
+			"Blogs": blogs,
+		})
+	})
+
+	app.Get("/blogs", func(c *fiber.Ctx) error {
+
+		blogs, err := getBlogs()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Render index template
+		return c.Render("blogs", fiber.Map{
+			"Title": "Title",
+			"Blogs": blogs,
+		})
+	})
+
+	app.Post("/blogs", func(c *fiber.Ctx) error {
+
+		payload := struct {
+			Title   string `form:"title_text"`
+			Content string `form:"content_text"`
+		}{}
+
+		if err := c.BodyParser(&payload); err != nil {
+			return err
+		}
+
+		sendBlog(payload)
+
+		blogs, err := getBlogs()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Render index template
+		return c.Render("blogs", fiber.Map{
+			"Title": "Title",
+			"Blogs": blogs,
+		})
+	})
+
+	app.Get("/blogs/delete/:id", func(c *fiber.Ctx) error {
+
+		blog_id := c.Params("id")
+
+		err := delBlog(blog_id)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		blogs, err := getBlogs()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Render index template
+		return c.Render("blogs", fiber.Map{
 			"Title": "Title",
 			"Blogs": blogs,
 		})
